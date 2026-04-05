@@ -16,9 +16,11 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 @st.cache_data
 def load_test_data():
-    # Load original data for random sample testing
-    df = pd.read_csv(os.path.join(BASE_DIR, 'data', 'creditcard.csv'))
-    return df
+    try:
+        df = pd.read_csv(os.path.join(BASE_DIR, 'data', 'creditcard.csv'))
+        return df
+    except FileNotFoundError:
+        return None
 
 @st.cache_data  
 def load_comparison():
@@ -103,13 +105,59 @@ with tab1:
         )
         
         if st.button("🎲 Load Sample Transaction", use_container_width=True):
-            if sample_type == "Random FRAUD Transaction":
-                sample = df[df['Class'] == 1].sample(1, random_state=None).iloc[0]
-            elif sample_type == "Random LEGITIMATE Transaction":
-                sample = df[df['Class'] == 0].sample(1, random_state=None).iloc[0]
-            else:
-                sample = df.sample(1, random_state=None).iloc[0]
             
+            legitimate_sample = {
+                'Time': 406.0, 'Amount': 149.62, 'Class': 0,
+                'V1': -1.3598071336738, 'V2': -0.0727811733098497,
+                'V3': 2.53634673796914, 'V4': 1.37815522427443,
+                'V5': -0.338320769942518, 'V6': 0.462387777762292,
+                'V7': 0.239598554061257, 'V8': 0.0986979012610507,
+                'V9': 0.363786969611213, 'V10': 0.0907941719789316,
+                'V11': -0.551599533260813, 'V12': -0.617800855762348,
+                'V13': -0.991389847235408, 'V14': -0.311169353699879,
+                'V15': 1.46817697209427, 'V16': -0.470400525259478,
+                'V17': 0.207971241929242, 'V18': 0.0257905801985591,
+                'V19': 0.403992960255733, 'V20': 0.251412098239705,
+                'V21': -0.018306777944153, 'V22': 0.277837575558899,
+                'V23': -0.110473910188767, 'V24': 0.0669280749146731,
+                'V25': 0.128539358273528, 'V26': -0.189114843888824,
+                'V27': 0.133558376740387, 'V28': -0.0210530534538215
+            }
+
+            fraud_sample = {
+                'Time': 406.0, 'Amount': 1.00, 'Class': 1,
+                'V1': -2.3122265423263, 'V2': 1.95199201064158,
+                'V3': -1.60985073229769, 'V4': 3.9979055875468,
+                'V5': -0.522187864667764, 'V6': -1.42654531920595,
+                'V7': -2.53738730624579, 'V8': 1.39165724829804,
+                'V9': -2.77008927719433, 'V10': -2.77227214465915,
+                'V11': 3.20203320709635, 'V12': -2.89990738849473,
+                'V13': -0.595221881324605, 'V14': -4.28925378244217,
+                'V15': 0.389724120274487, 'V16': -1.14074717980657,
+                'V17': -2.83005567450437, 'V18': -0.0168224681808257,
+                'V19': 0.416955705037907, 'V20': 0.126910559061474,
+                'V21': 0.517232370861764, 'V22': -0.0350493686052974,
+                'V23': -0.465211076944875, 'V24': 0.320198197836216,
+                'V25': 0.0445191674731724, 'V26': 0.177839798284401,
+                'V27': 0.261145002567677, 'V28': -0.143275874698918
+            }
+
+            if df is not None:
+                if sample_type == "Random FRAUD Transaction":
+                    sample = df[df['Class'] == 1].sample(1).iloc[0].to_dict()
+                elif sample_type == "Random LEGITIMATE Transaction":
+                    sample = df[df['Class'] == 0].sample(1).iloc[0].to_dict()
+                else:
+                    sample = df.sample(1).iloc[0].to_dict()
+            else:
+                if sample_type == "Random FRAUD Transaction":
+                    sample = fraud_sample
+                elif sample_type == "Random LEGITIMATE Transaction":
+                    sample = legitimate_sample
+                else:
+                    import random
+                    sample = random.choice([legitimate_sample, fraud_sample])
+
             st.session_state['sample'] = sample
             st.session_state['true_label'] = int(sample['Class'])
         
@@ -119,9 +167,8 @@ with tab1:
                 st.error("**True Label: 🚨 FRAUD**")
             else:
                 st.success("**True Label: ✅ LEGITIMATE**")
-            
             st.caption("Transaction loaded. Click Analyze to see prediction.")
-    
+
     with col2:
         st.subheader("Transaction Amount")
         if 'sample' in st.session_state:
@@ -134,7 +181,6 @@ with tab1:
     
     st.markdown("---")
     
-    # Analyze button
     if st.button("🔍 Analyze Transaction", 
                  use_container_width=True,
                  type="primary"):
@@ -144,7 +190,6 @@ with tab1:
         else:
             sample = st.session_state['sample']
             
-            # Build payload — all V features + Amount + Time
             payload = {
                 "Time": float(sample['Time']),
                 "Amount": float(sample['Amount'])
@@ -157,7 +202,6 @@ with tab1:
                     response = requests.post(API_URL, json=payload, timeout=10)
                     result = response.json()
                     
-                    # Override threshold with slider value
                     fraud_prob = result['fraud_probability']
                     prediction = "fraud" if fraud_prob >= custom_threshold else "legitimate"
                     
@@ -173,22 +217,14 @@ with tab1:
                             st.success("### ✅ LEGITIMATE")
                     
                     with col_b:
-                        st.metric(
-                            "Fraud Probability",
-                            f"{fraud_prob*100:.2f}%"
-                        )
+                        st.metric("Fraud Probability", f"{fraud_prob*100:.2f}%")
                     
                     with col_c:
-                        st.metric(
-                            "Risk Level",
-                            result['risk_level']
-                        )
+                        st.metric("Risk Level", result['risk_level'])
                     
-                    # Probability gauge
                     st.progress(fraud_prob)
                     st.caption(f"Fraud probability bar (threshold = {custom_threshold})")
                     
-                    # Correct/Wrong indicator
                     if 'true_label' in st.session_state:
                         true = st.session_state['true_label']
                         pred_int = 1 if prediction == "fraud" else 0
@@ -202,7 +238,6 @@ with tab1:
                             else:
                                 st.warning("⚠️ **FALSE POSITIVE** — Legitimate transaction flagged as fraud (false alarm = unhappy customer)")
                     
-                    # Threshold insight
                     st.info(f"""
                     **Threshold Analysis:** 
                     Fraud probability is **{fraud_prob*100:.2f}%**.
@@ -218,11 +253,10 @@ with tab1:
                     **If this is the deployed app:** The API server may be 
                     sleeping (free tier). Wait 30 seconds and try again.
                     """)
-    
+
                 except requests.exceptions.Timeout:
                     st.error("⏱️ Request timed out. The server is taking too long.")
                     st.info("Free tier servers sleep after inactivity. Wait 30 seconds and retry.")
-
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — Model Comparison
 # ══════════════════════════════════════════════════════════════════════════════
